@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex Stock Trading Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans">
+
+    <!-- Header -->
+    <header class="bg-slate-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 py-5 flex justify-between items-center">
+            <h1 class="text-xl font-bold tracking-wide">📈 Apex Stock Exchange</h1>
+            <div class="flex items-center space-x-6">
+                <div>
+                    <span class="text-xs text-slate-400 block">Virtual Cash Balance</span>
+                    <span id="header-cash" class="text-lg font-extrabold text-emerald-400">$10,000.00</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- MARKET DATA & TRADING (2 Columns) -->
+        <section class="lg:col-span-2 space-y-6">
+            <div class="bg-white rounded-xl shadow-sm p-6 border">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-bold">Live Market Data</h2>
+                    <span class="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-medium">Auto-Refreshing</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b text-xs text-slate-400 uppercase">
+                                <th class="pb-3">Symbol / Name</th>
+                                <th class="pb-3">Price</th>
+                                <th class="pb-3">Change</th>
+                                <th class="pb-3 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="market-table" class="divide-y text-sm">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TRANSACTION HISTORY -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border">
+                <h2 class="text-lg font-bold mb-4">Transaction History</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b text-xs text-slate-400 uppercase">
+                                <th class="pb-3">Type</th>
+                                <th class="pb-3">Symbol</th>
+                                <th class="pb-3">Shares</th>
+                                <th class="pb-3">Price</th>
+                                <th class="pb-3">Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactions-table" class="divide-y text-sm text-slate-600">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- PORTFOLIO PERFORMANCE SUMMARY (1 Column) -->
+        <section class="space-y-6">
+            <div class="bg-white rounded-xl shadow-sm p-6 border">
+                <h2 class="text-lg font-bold mb-4">My Portfolio</h2>
+                <div class="bg-slate-50 p-4 rounded-lg mb-6 border">
+                    <p class="text-xs text-slate-500">Total Portfolio Value</p>
+                    <p id="portfolio-total" class="text-2xl font-black text-slate-900 mt-1">$10,000.00</p>
+                </div>
+                <h3 class="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wider">Holdings</h3>
+                <div id="holdings-list" class="space-y-3">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- TRADE MODAL -->
+    <div id="trade-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl max-w-sm w-full p-6 shadow-xl">
+            <h3 id="modal-title" class="text-lg font-bold mb-4">Trade Stock</h3>
+            <form onsubmit="executeTrade(event)" class="space-y-4">
+                <input type="hidden" id="trade-symbol">
+                <input type="hidden" id="trade-action">
+                <div>
+                    <label class="block text-sm font-medium text-slate-600">Number of Shares</label>
+                    <input type="number" id="trade-shares" min="1" value="1" required class="mt-1 w-full border rounded-lg p-2.5 text-sm focus:ring focus:ring-blue-200">
+                </div>
+                <div class="bg-slate-50 p-3 rounded-lg text-sm border">
+                    <p class="flex justify-between"><span>Estimated Total:</span> <strong id="trade-total">$0.00</strong></p>
+                </div>
+                <div class="flex space-x-2 pt-2">
+                    <button type="button" onclick="closeModal()" class="w-1/2 border py-2.5 rounded-lg text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+                    <button type="submit" id="modal-submit-btn" class="w-1/2 bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700">Confirm</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let currentMarketData = [];
+        let currentPortfolio = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshData();
+            setInterval(refreshData, 3000);
+        });
+
+        async function refreshData() {
+            try {
+                const [stocksRes, portfolioRes] = await Promise.all([
+                    fetch('/api/stocks'),
+                    fetch('/api/portfolio')
+                ]);
+                currentMarketData = await stocksRes.json();
+                currentPortfolio = await portfolioRes.json();
+                
+                renderMarket();
+                renderPortfolio();
+            } catch (err) {
+                console.error("Error refreshing data:", err);
+            }
+        }
+
+        function renderMarket() {
+            const tbody = document.getElementById('market-table');
+            tbody.innerHTML = '';
+            currentMarketData.forEach(stock => {
+                const isPositive = stock.change >= 0;
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="py-3">
+                            <span class="font-bold block">${stock.symbol}</span>
+                            <span class="text-xs text-slate-400">${stock.name}</span>
+                        </td>
+                        <td class="py-3 font-semibold">$${stock.price.toFixed(2)}</td>
+                        <td class="py-3 font-medium ${isPositive ? 'text-emerald-600' : 'text-rose-600'}">
+                            ${isPositive ? '+' : ''}${stock.change.toFixed(2)}%
+                        </td>
+                        <td class="py-3 text-right space-x-2">
+                            <button onclick="openModal('${stock.symbol}', 'BUY')" class="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700">Buy</button>
+                            <button onclick="openModal('${stock.symbol}', 'SELL')" class="px-3 py-1 bg-rose-600 text-white text-xs font-semibold rounded hover:bg-rose-700">Sell</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function renderPortfolio() {
+            document.getElementById('header-cash').innerText = `$${currentPortfolio.cash.toFixed(2)}`;
+            
+            let holdingsValue = 0;
+            const listDiv = document.getElementById('holdings-list');
+            listDiv.innerHTML = '';
+
+            if (currentPortfolio.holdings.length === 0) {
+                listDiv.innerHTML = `<p class="text-xs text-slate-400">No active stock holdings.</p>`;
+            } else {
+                currentPortfolio.holdings.forEach(h => {
+                    const stockInfo = currentMarketData.find(s => s.symbol === h.symbol);
+                    const currentPrice = stockInfo ? stockInfo.price : 0;
+                    const val = currentPrice * h.shares;
+                    holdingsValue += val;
+
+                    listDiv.innerHTML += `
+                        <div class="flex justify-between items-center p-3 bg-slate-50 border rounded-lg text-sm">
+                            <div>
+                                <span class="font-bold">${h.symbol}</span>
+                                <span class="text-xs text-slate-500 block">${h.shares} shares</span>
+                            </div>
+                            <span class="font-bold text-slate-900">$${val.toFixed(2)}</span>
+                        </div>
+                    `;
+                });
+            }
+
+            const totalPortfolioValue = currentPortfolio.cash + holdingsValue;
+            document.getElementById('portfolio-total').innerText = `$${totalPortfolioValue.toFixed(2)}`;
+
+            const txTbody = document.getElementById('transactions-table');
+            txTbody.innerHTML = '';
+            if (currentPortfolio.transactions.length === 0) {
+                txTbody.innerHTML = `<tr><td colspan="5" class="py-3 text-slate-400 text-xs">No transactions executed yet.</td></tr>`;
+            } else {
+                currentPortfolio.transactions.forEach(t => {
+                    txTbody.innerHTML += `
+                        <tr class="hover:bg-slate-50">
+                            <td class="py-2.5 font-bold ${t.type === 'BUY' ? 'text-emerald-600' : 'text-rose-600'}">${t.type}</td>
+                            <td class="py-2.5 font-semibold">${t.symbol}</td>
+                            <td class="py-2.5">${t.shares}</td>
+                            <td class="py-2.5">$${t.price.toFixed(2)}</td>
+                            <td class="py-2.5 text-xs text-slate-400">${t.timestamp}</td>
+                        </tr>
+                    `;
+                });
+            }
+        }
+
+        function openModal(symbol, action) {
+            document.getElementById('trade-symbol').value = symbol;
+            document.getElementById('trade-action').value = action;
+            document.getElementById('modal-title').innerText = `${action} ${symbol}`; // Fixed ID selector bug
+            document.getElementById('modal-submit-btn').innerText = action;
+            document.getElementById('modal-submit-btn').className = action === 'BUY' ? 'w-1/2 bg-emerald-600 text-white py-2.5 rounded-lg font-medium hover:bg-emerald-700' : 'w-1/2 bg-rose-600 text-white py-2.5 rounded-lg font-medium hover:bg-rose-700';
+            document.getElementById('trade-shares').value = 1;
+            updateTotal();
+            document.getElementById('trade-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('trade-modal').classList.add('hidden');
+        }
+
+        document.getElementById('trade-shares').addEventListener('input', updateTotal);
+
+        function updateTotal() {
+            const symbol = document.getElementById('trade-symbol').value;
+            const shares = parseInt(document.getElementById('trade-shares').value) || 0;
+            const stock = currentMarketData.find(s => s.symbol === symbol);
+            const price = stock ? stock.price : 0;
+            document.getElementById('trade-total').innerText = `$${(price * shares).toFixed(2)}`;
+        }
+
+        async function executeTrade(e) {
+            e.preventDefault();
+            const tradeData = {
+                symbol: document.getElementById('trade-symbol').value,
+                action: document.getElementById('trade-action').value,
+                shares: parseInt(document.getElementById('trade-shares').value)
+            };
+
+            const res = await fetch('/api/trade', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(tradeData)
+            });
+
+            if (res.ok) {
+                closeModal();
+                refreshData();
+            } else {
+                const err = await res.json();
+                alert("Trade failed: " + err.status);
+            }
+        }
+    </script>
+</body>
+</html>
